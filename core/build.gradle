@@ -9,6 +9,12 @@ dependencies {
     implementation "com.badlogicgames.gdx:gdx-ai:1.8.2"
     implementation "com.badlogicgames.gdx:gdx-box2d:1.12.1"
 
+    // Adicionar a biblioteca noise4j para geração de ruído
+    implementation "com.github.czyzby:noise4j:0.1.0"
+    
+    // Adicionar uiltimos para gerenciamento de UI
+    implementation "com.kotcrab.vis:vis-ui:1.4.11"
+    
     // Optional: Kotlin support
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
 }
