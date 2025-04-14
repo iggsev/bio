@@ -1,27 +1,30 @@
 package com.biobox;
 
-import com.badlogic.gdx.math.PerlinNoiseGenerator;
+import com.badlogic.gdx.math.MathUtils;
 
 public class WorldGenerator {
-    public static TileType[][] generateIsland(int width, int height) {
-        TileType[][] map = new TileType[width][height];
+    public Map generateWorld(int width, int height) {
+        // Use our custom PerlinNoiseGenerator
         PerlinNoiseGenerator noiseGen = new PerlinNoiseGenerator();
-        float scale = 10.0f;
-
+        Map map = new Map(width, height);
+        
+        // Use noise to determine terrain types
         for (int x = 0; x < width; x++) {
             for (int y = 0; y < height; y++) {
-                float nx = (float) x / width * scale;
-                float ny = (float) y / height * scale;
-                float noise = noiseGen.generate(nx, ny, 5, 0.5f, 1.0f);
-                if (noise < 0.3f) {
-                    map[x][y] = TileType.WATER;
-                } else if (noise < 0.7f) {
-                    map[x][y] = TileType.GRASS;
+                // Get noise value at this position
+                float noiseValue = noiseGen.fbm(x * 0.1f, y * 0.1f, 4, 0.5f);
+                
+                // Map noise value to terrain type
+                if (noiseValue < -0.3f) {
+                    map.setTile(x, y, TileType.WATER);
+                } else if (noiseValue < 0.3f) {
+                    map.setTile(x, y, TileType.GRASS);
                 } else {
-                    map[x][y] = TileType.WALL;
+                    map.setTile(x, y, TileType.WALL);
                 }
             }
         }
+        
         return map;
     }
 }

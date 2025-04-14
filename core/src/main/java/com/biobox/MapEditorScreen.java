@@ -4,166 +4,232 @@ import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.math.MathUtils;
-import com.badlogic.gdx.scenes.scene2d.Actor;
-import com.badlogic.gdx.scenes.scene2d.Stage;
-import com.badlogic.gdx.scenes.scene2d.ui.Skin;
-import com.badlogic.gdx.scenes.scene2d.ui.Slider;
-import com.badlogic.gdx.scenes.scene2d.ui.Table;
-import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
-import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
-import com.badlogic.gdx.utils.viewport.ScreenViewport;
+import com.badlogic.gdx.math.Vector3;
 
 public class MapEditorScreen extends ApplicationAdapter {
     private ShapeRenderer shapeRenderer;
-    private TileType[][] map;
-    private int entityX, entityY;
+    private OrthographicCamera camera;
+    private Map map;
+    private Entity entity;
+    private int[][] tileData;
     private static final int MAP_SIZE = 100;
     private static final int TILE_SIZE = 16;
-    private Stage stage;
-    private Skin skin;
-    private int brushSize = 1;
-    private TileType selectedTileType = TileType.GRASS;
+    private float timeSinceLastMove = 0;
+    private Vector3 touchPos = new Vector3();
+    private int selectedTileType = 0;
+    private String[] tileTypeNames = {"GRASS", "WALL", "WATER"};
 
     @Override
     public void create() {
         shapeRenderer = new ShapeRenderer();
-        map = WorldGenerator.generateIsland(MAP_SIZE, MAP_SIZE);
+        camera = new OrthographicCamera();
+        camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        camera.position.set(MAP_SIZE * TILE_SIZE / 2f, MAP_SIZE * TILE_SIZE / 2f, 0);
         
-        entityX = MAP_SIZE / 2;
-        entityY = MAP_SIZE / 2;
-
-        stage = new Stage(new ScreenViewport());
-        Gdx.input.setInputProcessor(stage);
-        skin = new Skin(Gdx.files.internal("uiskin.json"));
-
-        Table table = new Table();
-        table.setFillParent(true);
-        stage.addActor(table);
-
-        TextButton grassButton = new TextButton("Grama", skin);
-        grassButton.addListener(new ChangeListener() {
-            @Override
-            public void changed(ChangeEvent event, Actor actor) {
-                selectedTileType = TileType.GRASS;
+        // Generate a new map with the WorldGenerator
+        WorldGenerator worldGen = new WorldGenerator();
+        map = worldGen.generateWorld(MAP_SIZE, MAP_SIZE);
+        
+        // Convert Map to simple tile data for rendering
+        tileData = new int[MAP_SIZE][MAP_SIZE];
+        for (int x = 0; x < MAP_SIZE; x++) {
+            for (int y = 0; y < MAP_SIZE; y++) {
+                TileType type = map.getTile(x, y);
+                if (type == TileType.GRASS) tileData[x][y] = 0;
+                else if (type == TileType.WALL) tileData[x][y] = 1;
+                else if (type == TileType.WATER) tileData[x][y] = 2;
             }
-        });
-        table.add(grassButton).pad(5);
-
-        TextButton wallButton = new TextButton("Parede", skin);
-        wallButton.addListener(new ChangeListener() {
-            @Override
-            public void changed(ChangeEvent event, Actor actor) {
-                selectedTileType = TileType.WALL;
-            }
-        });
-        table.add(wallButton).pad(5);
-
-        TextButton waterButton = new TextButton("Agua", skin);
-        waterButton.addListener(new ChangeListener() {
-            @Override
-            public void changed(ChangeEvent event, Actor actor) {
-                selectedTileType = TileType.WATER;
-            }
-        });
-        table.add(waterButton).pad(5);
-
-        Slider brushSizeSlider = new Slider(1, 5, 1, false, skin);
-        brushSizeSlider.addListener(new ChangeListener() {
-            @Override
-            public void changed(ChangeEvent event, Actor actor) {
-                brushSize = (int) brushSizeSlider.getValue();
-            }
-        });
-        table.row();
-        table.add(brushSizeSlider).colspan(3).pad(5);
+        }
+        
+        // Place entity on a walkable tile
+        int startX = MAP_SIZE / 2;
+        int startY = MAP_SIZE / 2;
+        
+        // Make sure the entity starts on walkable terrain
+        while (!map.getTile(startX, startY).isWalkable()) {
+            startX = MathUtils.random(0, MAP_SIZE - 1);
+            startY = MathUtils.random(0, MAP_SIZE - 1);
+        }
+        
+        entity = new Entity(map, startX, startY);
     }
 
     @Override
     public void render() {
-        Gdx.gl.glClearColor(0.5f, 0.8f, 1f, 1);
+        // Handle input
+        handleInput();
+        
+        // Update entity
+        timeSinceLastMove += Gdx.graphics.getDeltaTime();
+        if (timeSinceLastMove > 0.5f) {
+            entity.moveRandomly();
+            timeSinceLastMove = 0;
+        }
+        
+        // Clear screen
+        Gdx.gl.glClearColor(0.1f, 0.1f, 0.1f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-
-        if (MathUtils.randomBoolean(0.1f)) {
-            moveEntity();
-        }
-
+        
+        // Update camera
+        camera.update();
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        
+        // Render map
         renderMap();
-
-        if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
-            int mapX = Gdx.input.getX() / TILE_SIZE;
-            int mapY = (Gdx.graphics.getHeight() - Gdx.input.getY()) / TILE_SIZE;
-            paint(mapX, mapY, brushSize, selectedTileType);
-        }
-
-        stage.act(Gdx.graphics.getDeltaTime());
-        stage.draw();
+        
+        // Render UI
+        renderUI();
     }
-
-    private void moveEntity() {
-        int direction = MathUtils.random(0, 3);
-        int newX = entityX, newY = entityY;
-
-        switch (direction) {
-            case 0: newX++; break; // Right
-            case 1: newX--; break; // Left
-            case 2: newY++; break; // Up
-            case 3: newY--; break; // Down
+    
+    private void handleInput() {
+        // Camera movement
+        if (Gdx.input.isKeyPressed(Input.Keys.W)) camera.position.y += 5;
+        if (Gdx.input.isKeyPressed(Input.Keys.S)) camera.position.y -= 5;
+        if (Gdx.input.isKeyPressed(Input.Keys.A)) camera.position.x -= 5;
+        if (Gdx.input.isKeyPressed(Input.Keys.D)) camera.position.x += 5;
+        
+        // Zoom
+        if (Gdx.input.isKeyPressed(Input.Keys.Q)) camera.zoom += 0.05f;
+        if (Gdx.input.isKeyPressed(Input.Keys.E)) camera.zoom -= 0.05f;
+        camera.zoom = MathUtils.clamp(camera.zoom, 0.1f, 3f);
+        
+        // Cycle through tile types
+        if (Gdx.input.isKeyJustPressed(Input.Keys.TAB)) {
+            selectedTileType = (selectedTileType + 1) % 3;
         }
-
-        if (newX >= 0 && newX < MAP_SIZE && newY >= 0 && newY < MAP_SIZE) {
-            TileType tile = map[newX][newY];
-            if (tile.isWalkable()) {
-                entityX = newX;
-                entityY = newY;
+        
+        // Place tiles with mouse
+        if (Gdx.input.isTouched()) {
+            touchPos.set(Gdx.input.getX(), Gdx.input.getY(), 0);
+            camera.unproject(touchPos);
+            
+            int tileX = (int)(touchPos.x / TILE_SIZE);
+            int tileY = (int)(touchPos.y / TILE_SIZE);
+            
+            if (tileX >= 0 && tileX < MAP_SIZE && tileY >= 0 && tileY < MAP_SIZE) {
+                tileData[tileX][tileY] = selectedTileType;
+                
+                // Update the actual Map data
+                TileType type = TileType.GRASS;
+                if (selectedTileType == 1) type = TileType.WALL;
+                if (selectedTileType == 2) type = TileType.WATER;
+                map.setTile(tileX, tileY, type);
             }
+        }
+        
+        // Generate new map with R key
+        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
+            WorldGenerator worldGen = new WorldGenerator();
+            map = worldGen.generateWorld(MAP_SIZE, MAP_SIZE);
+            
+            // Update tile data
+            for (int x = 0; x < MAP_SIZE; x++) {
+                for (int y = 0; y < MAP_SIZE; y++) {
+                    TileType type = map.getTile(x, y);
+                    if (type == TileType.GRASS) tileData[x][y] = 0;
+                    else if (type == TileType.WALL) tileData[x][y] = 1;
+                    else if (type == TileType.WATER) tileData[x][y] = 2;
+                }
+            }
+            
+            // Reposition entity
+            int startX = MAP_SIZE / 2;
+            int startY = MAP_SIZE / 2;
+            while (!map.getTile(startX, startY).isWalkable()) {
+                startX = MathUtils.random(0, MAP_SIZE - 1);
+                startY = MathUtils.random(0, MAP_SIZE - 1);
+            }
+            entity = new Entity(map, startX, startY);
         }
     }
 
     private void renderMap() {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         
-        for (int x = 0; x < MAP_SIZE; x++) {
-            for (int y = 0; y < MAP_SIZE; y++) {
-                TileType type = map[x][y];
-                shapeRenderer.setColor(type.getColor());
+        // Calculate visible region for better performance
+        int startX = Math.max(0, (int)((camera.position.x - camera.viewportWidth/2 * camera.zoom) / TILE_SIZE) - 1);
+        int endX = Math.min(MAP_SIZE - 1, (int)((camera.position.x + camera.viewportWidth/2 * camera.zoom) / TILE_SIZE) + 1);
+        int startY = Math.max(0, (int)((camera.position.y - camera.viewportHeight/2 * camera.zoom) / TILE_SIZE) - 1);
+        int endY = Math.min(MAP_SIZE - 1, (int)((camera.position.y + camera.viewportHeight/2 * camera.zoom) / TILE_SIZE) + 1);
+        
+        // Render tiles
+        for (int x = startX; x <= endX; x++) {
+            for (int y = startY; y <= endY; y++) {
+                // Different colors for different tile types
+                switch (tileData[x][y]) {
+                    case 0: // Grass
+                        shapeRenderer.setColor(0.2f, 0.7f, 0.2f, 1f);
+                        break;
+                    case 1: // Wall
+                        shapeRenderer.setColor(0.5f, 0.5f, 0.5f, 1f);
+                        break;
+                    case 2: // Water
+                        shapeRenderer.setColor(0.2f, 0.2f, 0.8f, 1f);
+                        break;
+                }
                 shapeRenderer.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             }
         }
 
+        // Render entity
         shapeRenderer.setColor(Color.RED);
         shapeRenderer.circle(
-            entityX * TILE_SIZE + TILE_SIZE / 2f, 
-            entityY * TILE_SIZE + TILE_SIZE / 2f, 
+            entity.getX() * TILE_SIZE + TILE_SIZE / 2f, 
+            entity.getY() * TILE_SIZE + TILE_SIZE / 2f, 
             TILE_SIZE / 2f
         );
 
+        // Render grid lines
+        shapeRenderer.setColor(0.3f, 0.3f, 0.3f, 0.5f);
+        for (int x = startX; x <= endX; x++) {
+            shapeRenderer.line(x * TILE_SIZE, startY * TILE_SIZE, x * TILE_SIZE, (endY + 1) * TILE_SIZE);
+        }
+        for (int y = startY; y <= endY; y++) {
+            shapeRenderer.line(startX * TILE_SIZE, y * TILE_SIZE, (endX + 1) * TILE_SIZE, y * TILE_SIZE);
+        }
+
         shapeRenderer.end();
     }
-
-    private void paint(int centerX, int centerY, int size, TileType type) {
-        int startX = Math.max(0, centerX - size / 2);
-        int startY = Math.max(0, centerY - size / 2);
-        int endX = Math.min(MAP_SIZE - 1, centerX + size / 2);
-        int endY = Math.min(MAP_SIZE - 1, centerY + size / 2);
-        for (int x = startX; x <= endX; x++) {
-            for (int y = startY; y <= endY; y++) {
-                map[x][y] = type;
-            }
+    
+    private void renderUI() {
+        // Set up for UI rendering (in screen coordinates)
+        shapeRenderer.setProjectionMatrix(new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight()).combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        
+        // Draw selected tile type indicator
+        shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 0.8f);
+        shapeRenderer.rect(10, 10, 200, 50);
+        
+        // Show the color of the selected tile
+        switch (selectedTileType) {
+            case 0: // Grass
+                shapeRenderer.setColor(0.2f, 0.7f, 0.2f, 1f);
+                break;
+            case 1: // Wall
+                shapeRenderer.setColor(0.5f, 0.5f, 0.5f, 1f);
+                break;
+            case 2: // Water
+                shapeRenderer.setColor(0.2f, 0.2f, 0.8f, 1f);
+                break;
         }
+        shapeRenderer.rect(20, 20, 30, 30);
+        
+        shapeRenderer.end();
     }
 
     @Override
     public void resize(int width, int height) {
-        stage.getViewport().update(width, height, true);
+        camera.viewportWidth = width;
+        camera.viewportHeight = height;
+        camera.update();
     }
 
     @Override
     public void dispose() {
         shapeRenderer.dispose();
-        stage.dispose();
-        skin.dispose();
     }
 }
