@@ -1,17 +1,28 @@
-[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
-eclipse.project.name = appName + '-core'
+plugins {
+    id 'java-library'
+    id 'kotlin'
+}
 
 dependencies {
-  api "com.badlogicgames.box2dlights:box2dlights:$box2dlightsVersion"
-  api "com.badlogicgames.gdx-controllers:gdx-controllers-core:$gdxControllersVersion"
-  api "com.badlogicgames.gdx:gdx-ai:$aiVersion"
-  api "com.badlogicgames.gdx:gdx-box2d:$gdxVersion"
-  api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
-  api "com.badlogicgames.gdx:gdx:$gdxVersion"
-  api "io.github.libktx:ktx-ai:$ktxVersion"
-  api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+    implementation "com.badlogicgames.gdx:gdx:1.12.1"
+    implementation "com.badlogicgames.gdx:gdx-freetype:1.12.1"
+    implementation "com.badlogicgames.gdx:gdx-ai:1.8.2"
+    implementation "com.badlogicgames.gdx:gdx-box2d:1.12.1"
 
-  if(enableGraalNative == 'true') {
-    implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
-  }
+    // Optional: Kotlin support
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
 }
+
+// Java compatibility
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+// Ensure UTF-8 encoding for source files
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+// Eclipse project configuration
+eclipse.project.name = 'biobox-core'
