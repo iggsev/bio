@@ -125,11 +125,13 @@ public class MapEditorScreen extends ApplicationAdapter {
         Gdx.gl.glClearColor(0.1f, 0.1f, 0.15f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
         
-        // In game mode, the main entity moves randomly
         if (!editorMode) {
             timeSinceLastMove += Gdx.graphics.getDeltaTime();
             if (timeSinceLastMove > 0.5f) {
-                mainEntity.moveRandomly();
+                // Move all entities, not just the main one
+                for (Entity entity : entities) {
+                    entity.moveRandomly();
+                }
                 timeSinceLastMove = 0;
             }
         }
