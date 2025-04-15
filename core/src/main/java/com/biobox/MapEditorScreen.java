@@ -3,462 +3,368 @@ package com.biobox;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
-import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.TimeUtils;
+import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.Viewport;
 
+/**
+ * Tela principal do editor de mapas com suporte a mapas toroidais (wraparound)
+ */
 public class MapEditorScreen extends ApplicationAdapter {
-    private SpriteBatch batch;
-    private ShapeRenderer shapeRenderer;
-    private OrthographicCamera camera;
-    private OrthographicCamera uiCamera;
-    private Map map;
-    private Entity mainEntity;
-    private Array<Entity> entities = new Array<>();
-    private static final int MAP_SIZE = 100;
-    private static final int TILE_SIZE = 32;
-    private float timeSinceLastMove = 0;
-    private Vector3 touchPos = new Vector3();
-    private TileType selectedTileType = TileType.GRASS;
-    
-    // Map generation types
+    // Map generation types - for WorldGenerator compatibility
     public enum MapType {
         DEFAULT,
         ISLAND,
         CONTINENT,
         LAKES
     }
-    private MapType currentMapType = MapType.DEFAULT;
     
-    // UI elements
-    private boolean isDragging = false;
-    private boolean editorMode = true;
-    private boolean entityPlacementMode = false;
+    // Definição do tamanho do mapa otimizado para tela padrão (16:9)
+    private static final int MAP_WIDTH = 30;  // Tamanho do mapa reduzido ainda mais
+    private static final int MAP_HEIGHT = 20; // Mantém proporção 3:2, mas com menos tiles
     
-    // UI Buttons
-    private Rectangle grassButton;
-    private Rectangle wallButton;
-    private Rectangle waterButton;
-    private Rectangle entityButton;
-    private Rectangle modeButton;
+    private static final int LOD_REGION_SIZE = 4;
+    private static final boolean USE_VSYNC = true;
     
-    // Map generation buttons
-    private Rectangle defaultMapButton;
-    private Rectangle islandMapButton;
-    private Rectangle continentMapButton;
-    private Rectangle lakesMapButton;
+    // Objetos de renderização
+    private SpriteBatch batch;
+    private ShapeRenderer shapeRenderer;
+    private OrthographicCamera camera;
+    private OrthographicCamera uiCamera;
+    private BitmapFont font;
+    private Viewport viewport;
+    private Viewport uiViewport;
+    
+    // Componentes do jogo
+    private GameMap map;
+    private MapRenderer mapRenderer;
+    private UIManager uiManager;
+    private Array<SimpleEntity> entities = new Array<>();
+    private SimpleEntity playerEntity;
+    
+    // Estado do jogo
+    private Vector3 touchPos = new Vector3();
+    private int lastPlacedTileX = -1;
+    private int lastPlacedTileY = -1;
+    private float timeAccumulator = 0;
+    
+    // Medição de performance
+    private long lastFrameTime = 0;
+    private long frameTimeSum = 0;
+    private int frameCount = 0;
+    private float fps = 0;
     
     @Override
     public void create() {
-        batch = new SpriteBatch();
-        shapeRenderer = new ShapeRenderer();
-        
-        // Configurar câmera para o mundo
-        camera = new OrthographicCamera();
-        camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(MAP_SIZE * TILE_SIZE / 2f, MAP_SIZE * TILE_SIZE / 2f, 0);
-        
-        // Configurar câmera para UI
-        uiCamera = new OrthographicCamera();
-        uiCamera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        
-        // Initialize UI rectangles here
-        int buttonHeight = 30;
-        int buttonWidth = 120;
-        int margin = 10;
-        int startY = Gdx.graphics.getHeight() - buttonHeight - margin;
-        
-        // Tile buttons
-        grassButton = new Rectangle(margin, startY, buttonWidth, buttonHeight);
-        wallButton = new Rectangle(margin, startY - buttonHeight - margin, buttonWidth, buttonHeight);
-        waterButton = new Rectangle(margin, startY - 2 * (buttonHeight + margin), buttonWidth, buttonHeight);
-        entityButton = new Rectangle(margin, startY - 3 * (buttonHeight + margin), buttonWidth, buttonHeight);
-        modeButton = new Rectangle(margin, startY - 4 * (buttonHeight + margin), buttonWidth, buttonHeight);
-        
-        // Map generation buttons
-        int mapButtonWidth = 100;
-        int mapButtonX = Gdx.graphics.getWidth() - mapButtonWidth - margin;
-        defaultMapButton = new Rectangle(mapButtonX, startY, mapButtonWidth, buttonHeight);
-        islandMapButton = new Rectangle(mapButtonX, startY - buttonHeight - margin, mapButtonWidth, buttonHeight);
-        continentMapButton = new Rectangle(mapButtonX, startY - 2 * (buttonHeight + margin), mapButtonWidth, buttonHeight);
-        lakesMapButton = new Rectangle(mapButtonX, startY - 3 * (buttonHeight + margin), mapButtonWidth, buttonHeight);
-        
-        System.out.println("Usando renderização básica sem texturas");
-        
-        // Generate initial map
-        generateMap(currentMapType);
-        
-        // Configurar input handler
-        Gdx.input.setInputProcessor(new CustomInputProcessor(this));
+        try {
+            System.out.println("Inicializando editor de mapas toroidal...");
+            
+            // Configurar OpenGL
+            Gdx.gl.glClearColor(0.1f, 0.1f, 0.1f, 1);
+            
+            // Configurar VSync
+            Gdx.graphics.setVSync(USE_VSYNC);
+            
+            // Inicializar objetos de renderização
+            batch = new SpriteBatch();
+            shapeRenderer = new ShapeRenderer();
+            font = new BitmapFont();
+            font.getData().setScale(1.2f);
+            
+            // Configurar câmeras com viewports para melhor estabilidade
+            setupCameras();
+            
+            // Inicializar mapa
+            map = new GameMap(MAP_WIDTH, MAP_HEIGHT, LOD_REGION_SIZE);
+            
+            // Inicializar renderizador do mapa
+            mapRenderer = new MapRenderer(map, GameMap.TILE_SIZE, shapeRenderer);
+            
+            // Habilitar LOD para prevenir flickering
+            mapRenderer.setUseLOD(true);
+            
+            // Inicializar gerenciador de UI
+            uiManager = new UIManager(shapeRenderer, batch, font);
+            
+            // Criar jogador e algumas entidades
+            createEntities();
+            
+            // Configurar processador de entrada
+            Gdx.input.setInputProcessor(new GameInputProcessor());
+            
+            // Inicializar tempo do frame
+            lastFrameTime = TimeUtils.millis();
+            
+            System.out.println("Inicialização completa");
+        } catch (Exception e) {
+            System.err.println("Erro durante inicialização: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
     
-    private void generateMap(MapType type) {
-        WorldGenerator worldGen = new WorldGenerator();
-        map = worldGen.generateWorld(MAP_SIZE, MAP_SIZE, type);
+    private void setupCameras() {
+        camera = new OrthographicCamera();
+        viewport = new FitViewport(Gdx.graphics.getWidth(), Gdx.graphics.getHeight(), camera);
+        camera.position.set(MAP_WIDTH * GameMap.TILE_SIZE / 2f, MAP_HEIGHT * GameMap.TILE_SIZE / 2f, 0);
+        camera.zoom = 1.0f; // Zoom mais próximo para ver menos tiles de uma vez
         
-        // Clear existing entities
-        entities.clear();
+        uiCamera = new OrthographicCamera();
+        uiViewport = new FitViewport(Gdx.graphics.getWidth(), Gdx.graphics.getHeight(), uiCamera);
+        uiCamera.position.set(Gdx.graphics.getWidth() / 2f, Gdx.graphics.getHeight() / 2f, 0);
+    }
+    
+    private void createEntities() {
+        playerEntity = new SimpleEntity(map, MAP_WIDTH/2f, MAP_HEIGHT/2f, Color.RED);
+        entities.add(playerEntity);
         
-        // Create main entity
-        int startX = MAP_SIZE / 2;
-        int startY = MAP_SIZE / 2;
-        
-        // Make sure entity starts on walkable terrain
-        while (!map.getTile(startX, startY).isWalkable()) {
-            startX = MathUtils.random(0, MAP_SIZE - 1);
-            startY = MathUtils.random(0, MAP_SIZE - 1);
+        // Criar entidades em vários lugares do mapa
+        for (int i = 0; i < 30; i++) {
+            float x = MathUtils.random(0, MAP_WIDTH-1);
+            float y = MathUtils.random(0, MAP_HEIGHT-1);
+            if (map.getTile((int)x, (int)y).isWalkable()) {
+                Color entityColor = new Color(
+                    MathUtils.random(0.7f, 1.0f),
+                    MathUtils.random(0.3f, 0.6f),
+                    MathUtils.random(0.3f, 0.6f),
+                    1f
+                );
+                entities.add(new SimpleEntity(map, x, y, entityColor));
+            }
         }
-        
-        mainEntity = new Entity(map, startX, startY);
-        entities.add(mainEntity);
     }
     
     @Override
     public void render() {
-        // Clear screen
-        Gdx.gl.glClearColor(0.1f, 0.1f, 0.15f, 1);
-        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-        
-        if (!editorMode) {
-            timeSinceLastMove += Gdx.graphics.getDeltaTime();
-            if (timeSinceLastMove > 0.5f) {
-                // Move all entities, not just the main one
-                for (Entity entity : entities) {
-                    entity.moveRandomly();
-                }
-                timeSinceLastMove = 0;
+        try {
+            // Calcular delta time manualmente para movimentação consistente
+            long currentTime = TimeUtils.millis();
+            float deltaTime = (currentTime - lastFrameTime) / 1000f;
+            lastFrameTime = currentTime;
+            
+            // Limitar delta time para evitar saltos grandes
+            deltaTime = Math.min(deltaTime, 0.1f);
+            
+            // Rastrear tempo do frame para cálculo de FPS
+            frameTimeSum += TimeUtils.timeSinceMillis(currentTime);
+            frameCount++;
+            if (frameCount >= 30) {
+                fps = 1000f / (frameTimeSum / (float)frameCount);
+                frameTimeSum = 0;
+                frameCount = 0;
+                uiManager.updateFPS(fps);
             }
+            
+            // Acumular tempo para atualizações de entidades
+            timeAccumulator += deltaTime;
+            
+            // Limpar tela
+            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+            
+            // Atualizar
+            handleCameraControls();
+            uiManager.handleUIHover(Gdx.input.getX(), Gdx.input.getY());
+            camera.update();
+            uiCamera.update();
+            
+            // Atualizar entidades em passos de tempo fixos para evitar flickering
+            if (!uiManager.isEditorMode() && timeAccumulator >= 0.016f) { // ~60 atualizações por segundo
+                for (SimpleEntity entity : entities) {
+                    if (entity != playerEntity) { // Não mover jogador automaticamente
+                        entity.update(timeAccumulator);
+                    }
+                }
+                timeAccumulator = 0;
+            }
+            
+            // Atualizar viewports
+            viewport.apply();
+            uiViewport.apply();
+            
+            // Atualizar LOD no renderizador
+            mapRenderer.setUseLOD(uiManager.isUsingLOD());
+            
+            // Renderizar mapa
+            mapRenderer.renderMap(camera);
+            
+            // Renderizar entidades
+            mapRenderer.renderEntities(camera, entities, uiManager.isEditorMode());
+            
+            // Renderizar UI
+            uiManager.render(uiCamera, entities.size);
+            
+        } catch (Exception e) {
+            System.err.println("Erro no loop de renderização: " + e.getMessage());
+            e.printStackTrace();
         }
-        
-        // Update camera
-        handleCameraControls();
-        camera.update();
-        
-        // Render map and entities
-        renderMap();
-        
-        // Render UI
-        renderUI();
-    }
-    
-    private void renderUI() {
-        // Configure UI batch and shape renderer
-        uiCamera.update();
-        shapeRenderer.setProjectionMatrix(uiCamera.combined);
-        
-        // Draw UI backgrounds with ShapeRenderer
-        Gdx.gl.glEnable(GL20.GL_BLEND);
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        
-        // Tile buttons
-        shapeRenderer.setColor(selectedTileType == TileType.GRASS && !entityPlacementMode ? Color.LIME : Color.FOREST);
-        shapeRenderer.rect(grassButton.x, grassButton.y, grassButton.width, grassButton.height);
-        
-        shapeRenderer.setColor(selectedTileType == TileType.WALL && !entityPlacementMode ? Color.LIGHT_GRAY : Color.DARK_GRAY);
-        shapeRenderer.rect(wallButton.x, wallButton.y, wallButton.width, wallButton.height);
-        
-        shapeRenderer.setColor(selectedTileType == TileType.WATER && !entityPlacementMode ? Color.SKY : Color.NAVY);
-        shapeRenderer.rect(waterButton.x, waterButton.y, waterButton.width, waterButton.height);
-        
-        shapeRenderer.setColor(entityPlacementMode ? Color.RED : Color.MAROON);
-        shapeRenderer.rect(entityButton.x, entityButton.y, entityButton.width, entityButton.height);
-        
-        shapeRenderer.setColor(editorMode ? Color.GOLD : Color.ORANGE);
-        shapeRenderer.rect(modeButton.x, modeButton.y, modeButton.width, modeButton.height);
-        
-        // Map generation buttons
-        shapeRenderer.setColor(currentMapType == MapType.DEFAULT ? Color.CYAN : Color.TEAL);
-        shapeRenderer.rect(defaultMapButton.x, defaultMapButton.y, defaultMapButton.width, defaultMapButton.height);
-        
-        shapeRenderer.setColor(currentMapType == MapType.ISLAND ? Color.CYAN : Color.TEAL);
-        shapeRenderer.rect(islandMapButton.x, islandMapButton.y, islandMapButton.width, islandMapButton.height);
-        
-        shapeRenderer.setColor(currentMapType == MapType.CONTINENT ? Color.CYAN : Color.TEAL);
-        shapeRenderer.rect(continentMapButton.x, continentMapButton.y, continentMapButton.width, continentMapButton.height);
-        
-        shapeRenderer.setColor(currentMapType == MapType.LAKES ? Color.CYAN : Color.TEAL);
-        shapeRenderer.rect(lakesMapButton.x, lakesMapButton.y, lakesMapButton.width, lakesMapButton.height);
-        
-        shapeRenderer.end();
-        
-        // Draw button outlines
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(Color.WHITE);
-        
-        // Tile selection buttons
-        shapeRenderer.rect(grassButton.x, grassButton.y, grassButton.width, grassButton.height);
-        shapeRenderer.rect(wallButton.x, wallButton.y, wallButton.width, wallButton.height);
-        shapeRenderer.rect(waterButton.x, waterButton.y, waterButton.width, waterButton.height);
-        shapeRenderer.rect(entityButton.x, entityButton.y, entityButton.width, entityButton.height);
-        shapeRenderer.rect(modeButton.x, modeButton.y, modeButton.width, modeButton.height);
-        
-        // Map generation buttons
-        shapeRenderer.rect(defaultMapButton.x, defaultMapButton.y, defaultMapButton.width, defaultMapButton.height);
-        shapeRenderer.rect(islandMapButton.x, islandMapButton.y, islandMapButton.width, islandMapButton.height);
-        shapeRenderer.rect(continentMapButton.x, continentMapButton.y, continentMapButton.width, continentMapButton.height);
-        shapeRenderer.rect(lakesMapButton.x, lakesMapButton.y, lakesMapButton.width, lakesMapButton.height);
-        
-        shapeRenderer.end();
-        
-        // Draw button text (without using fonts for now)
-        Gdx.gl.glDisable(GL20.GL_BLEND);
     }
     
     private void handleCameraControls() {
-        float speed = 10f;
-        if (Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)) {
-            speed = 20f;
-        }
+        float speed = 200f * Gdx.graphics.getDeltaTime() * camera.zoom;
         
-        // Camera movement
+        // Movimento da câmera
         if (Gdx.input.isKeyPressed(Input.Keys.W)) camera.position.y += speed;
         if (Gdx.input.isKeyPressed(Input.Keys.S)) camera.position.y -= speed;
         if (Gdx.input.isKeyPressed(Input.Keys.A)) camera.position.x -= speed;
         if (Gdx.input.isKeyPressed(Input.Keys.D)) camera.position.x += speed;
         
-        // Zoom
+        // Controle de zoom
         if (Gdx.input.isKeyPressed(Input.Keys.Q)) camera.zoom += 0.02f;
         if (Gdx.input.isKeyPressed(Input.Keys.E)) camera.zoom -= 0.02f;
-        camera.zoom = MathUtils.clamp(camera.zoom, 0.1f, 3f);
+        camera.zoom = MathUtils.clamp(camera.zoom, 0.1f, 4f);
+        
+        // Alternar entre modo editor/jogo com barra de espaço
+        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+            uiManager.setEditorMode(!uiManager.isEditorMode());
+        }
+        
+        // Não precisamos limitar a câmera dentro dos limites do mapa
+        // já que o mapa é toroidal (wraparound) e pode ser visto de qualquer ponto
     }
     
-    public void handleMapClick(int screenX, int screenY) {
-        // First check if click was on UI
-        if (checkUIClick(screenX, screenY)) {
+    private void handleMapClick(int screenX, int screenY) {
+        // Converter coordenadas da tela para coordenadas do mundo
+        touchPos.set(screenX, screenY, 0);
+        camera.unproject(touchPos);
+        
+        // Converter para coordenadas de tile
+        int tileX = MathUtils.floor(touchPos.x / GameMap.TILE_SIZE);
+        int tileY = MathUtils.floor(touchPos.y / GameMap.TILE_SIZE);
+        
+        // Aplicar transformação toroidal para garantir que estamos dentro do mapa
+        tileX = (tileX % MAP_WIDTH + MAP_WIDTH) % MAP_WIDTH;
+        tileY = (tileY % MAP_HEIGHT + MAP_HEIGHT) % MAP_HEIGHT;
+        
+        // Evitar colocar no mesmo local duas vezes seguidas
+        if (tileX == lastPlacedTileX && tileY == lastPlacedTileY) {
             return;
         }
         
-        if (!editorMode) return;
-        
-        // Otherwise handle as map click
-        touchPos.set(screenX, screenY, 0);
-        camera.unproject(touchPos); // This correctly handles zoom
-        
-        int tileX = (int)(touchPos.x / TILE_SIZE);
-        int tileY = (int)(touchPos.y / TILE_SIZE);
-        
-        if (tileX >= 0 && tileX < MAP_SIZE && tileY >= 0 && tileY < MAP_SIZE) {
-            if (entityPlacementMode) {
-                // Add a new entity if the tile is walkable
+        if (uiManager.isEditorMode()) {
+            // No modo editor, colocar tiles ou entidades
+            if (uiManager.isPlacingEntities()) {
+                // Colocar entidade
                 if (map.getTile(tileX, tileY).isWalkable()) {
-                    Entity newEntity = new Entity(map, tileX, tileY);
-                    entities.add(newEntity);
-                    System.out.println("Added entity at " + tileX + ", " + tileY);
+                    SimpleEntity entity = new SimpleEntity(map, tileX + 0.5f, tileY + 0.5f, 
+                        new Color(MathUtils.random(0.7f, 1.0f), 
+                                  MathUtils.random(0.3f, 0.6f), 
+                                  MathUtils.random(0.3f, 0.6f), 1f));
+                    entities.add(entity);
                 }
             } else {
-                // Set tile type
-                map.setTile(tileX, tileY, selectedTileType);
-            }
-        }
-    }
-    
-    private boolean checkUIClick(int screenX, int screenY) {
-        // Convert to UI coordinates (invert Y since libGDX has origin at bottom-left)
-        float uiY = Gdx.graphics.getHeight() - screenY;
-        
-        // Tile selection buttons
-        if (grassButton.contains(screenX, uiY)) {
-            selectedTileType = TileType.GRASS;
-            entityPlacementMode = false;
-            System.out.println("Selected: GRASS");
-            return true;
-        } else if (wallButton.contains(screenX, uiY)) {
-            selectedTileType = TileType.WALL;
-            entityPlacementMode = false;
-            System.out.println("Selected: WALL");
-            return true;
-        } else if (waterButton.contains(screenX, uiY)) {
-            selectedTileType = TileType.WATER;
-            entityPlacementMode = false;
-            System.out.println("Selected: WATER");
-            return true;
-        } else if (entityButton.contains(screenX, uiY)) {
-            entityPlacementMode = true;
-            System.out.println("Entity placement mode");
-            return true;
-        } else if (modeButton.contains(screenX, uiY)) {
-            editorMode = !editorMode;
-            System.out.println("Mode: " + (editorMode ? "EDITOR" : "GAME"));
-            return true;
-        }
-        
-        // Map generation buttons
-        if (defaultMapButton.contains(screenX, uiY)) {
-            currentMapType = MapType.DEFAULT;
-            generateMap(currentMapType);
-            System.out.println("Generating DEFAULT map");
-            return true;
-        } else if (islandMapButton.contains(screenX, uiY)) {
-            currentMapType = MapType.ISLAND;
-            generateMap(currentMapType);
-            System.out.println("Generating ISLAND map");
-            return true;
-        } else if (continentMapButton.contains(screenX, uiY)) {
-            currentMapType = MapType.CONTINENT;
-            generateMap(currentMapType);
-            System.out.println("Generating CONTINENT map");
-            return true;
-        } else if (lakesMapButton.contains(screenX, uiY)) {
-            currentMapType = MapType.LAKES;
-            generateMap(currentMapType);
-            System.out.println("Generating LAKES map");
-            return true;
-        }
-        
-        return false;
-    }
-    
-    public void handleMapDrag(int screenX, int screenY) {
-        if (editorMode && isDragging) {
-            // Don't handle drags that start on UI
-            float uiY = Gdx.graphics.getHeight() - screenY;
-            if (grassButton.contains(screenX, uiY) || 
-                wallButton.contains(screenX, uiY) || 
-                waterButton.contains(screenX, uiY) ||
-                entityButton.contains(screenX, uiY) ||
-                modeButton.contains(screenX, uiY) ||
-                defaultMapButton.contains(screenX, uiY) ||
-                islandMapButton.contains(screenX, uiY) ||
-                continentMapButton.contains(screenX, uiY) ||
-                lakesMapButton.contains(screenX, uiY)) {
-                return;
+                // Colocar tile
+                map.setTile(tileX, tileY, uiManager.getSelectedTileType());
             }
             
-            handleMapClick(screenX, screenY);
-        }
-    }
-    
-    public void startDragging() {
-        isDragging = true;
-    }
-    
-    public void stopDragging() {
-        isDragging = false;
-    }
-
-    private void renderMap() {
-        // Calculate visible region for better performance
-        int startX = Math.max(0, (int)((camera.position.x - camera.viewportWidth/2 * camera.zoom) / TILE_SIZE) - 1);
-        int endX = Math.min(MAP_SIZE - 1, (int)((camera.position.x + camera.viewportWidth/2 * camera.zoom) / TILE_SIZE) + 1);
-        int startY = Math.max(0, (int)((camera.position.y - camera.viewportHeight/2 * camera.zoom) / TILE_SIZE) - 1);
-        int endY = Math.min(MAP_SIZE - 1, (int)((camera.position.y + camera.viewportHeight/2 * camera.zoom) / TILE_SIZE) + 1);
-        
-        // Shape-based rendering
-        shapeRenderer.setProjectionMatrix(camera.combined);
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        
-        for (int x = startX; x <= endX; x++) {
-            for (int y = startY; y <= endY; y++) {
-                TileType tileType = map.getTile(x, y);
-                
-                // Set color based on tile type
-                shapeRenderer.setColor(tileType.getColor());
-                shapeRenderer.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            // Lembrar a última posição de tile colocado
+            lastPlacedTileX = tileX;
+            lastPlacedTileY = tileY;
+        } else {
+            // No modo jogo, mover entidade do jogador
+            if (map.getTile(tileX, tileY).isWalkable()) {
+                playerEntity.x = tileX + 0.5f;
+                playerEntity.y = tileY + 0.5f;
             }
         }
-        
-        // Draw all entities
-        for (Entity entity : entities) {
-            shapeRenderer.setColor(1, 0, 0, 1);
-            shapeRenderer.circle(
-                entity.getX() * TILE_SIZE + TILE_SIZE / 2f, 
-                entity.getY() * TILE_SIZE + TILE_SIZE / 2f, 
-                TILE_SIZE / 2f
-            );
-        }
-        
-        shapeRenderer.end();
-        
-        // Draw grid
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(0.3f, 0.3f, 0.3f, 0.5f);
-        
-        for (int x = startX; x <= endX + 1; x++) {
-            shapeRenderer.line(x * TILE_SIZE, startY * TILE_SIZE, x * TILE_SIZE, (endY + 1) * TILE_SIZE);
-        }
-        
-        for (int y = startY; y <= endY + 1; y++) {
-            shapeRenderer.line(startX * TILE_SIZE, y * TILE_SIZE, (endX + 1) * TILE_SIZE, y * TILE_SIZE);
-        }
-        
-        shapeRenderer.end();
     }
-
+    
+    private void resetMap() {
+        // Resetar para grama com variação de cor
+        map.fillWithGrass();
+        
+        // Resetar entidades
+        entities.clear();
+        playerEntity = new SimpleEntity(map, MAP_WIDTH/2f, MAP_HEIGHT/2f, Color.RED);
+        entities.add(playerEntity);
+        
+        for (int i = 0; i < 30; i++) {
+            float x = MathUtils.random(0, MAP_WIDTH-1);
+            float y = MathUtils.random(0, MAP_HEIGHT-1);
+            Color entityColor = new Color(
+                MathUtils.random(0.7f, 1.0f),
+                MathUtils.random(0.3f, 0.6f),
+                MathUtils.random(0.3f, 0.6f),
+                1f
+            );
+            entities.add(new SimpleEntity(map, x, y, entityColor));
+        }
+    }
+    
     @Override
     public void resize(int width, int height) {
-        camera.viewportWidth = width;
-        camera.viewportHeight = height;
+        // Atualizar viewports
+        viewport.update(width, height, false);
+        uiViewport.update(width, height, false);
+        
+        // Recalcular posições da UI
+        uiManager.setupUI();
+        
         camera.update();
-        
-        uiCamera.viewportWidth = width;
-        uiCamera.viewportHeight = height;
         uiCamera.update();
-        
-        // Update button positions after resize
-        int buttonHeight = 30;
-        int buttonWidth = 120;
-        int margin = 10;
-        int startY = height - buttonHeight - margin;
-        
-        // Tile buttons
-        grassButton.set(margin, startY, buttonWidth, buttonHeight);
-        wallButton.set(margin, startY - buttonHeight - margin, buttonWidth, buttonHeight);
-        waterButton.set(margin, startY - 2 * (buttonHeight + margin), buttonWidth, buttonHeight);
-        entityButton.set(margin, startY - 3 * (buttonHeight + margin), buttonWidth, buttonHeight);
-        modeButton.set(margin, startY - 4 * (buttonHeight + margin), buttonWidth, buttonHeight);
-        
-        // Map generation buttons
-        int mapButtonWidth = 100;
-        int mapButtonX = width - mapButtonWidth - margin;
-        defaultMapButton.set(mapButtonX, startY, mapButtonWidth, buttonHeight);
-        islandMapButton.set(mapButtonX, startY - buttonHeight - margin, mapButtonWidth, buttonHeight);
-        continentMapButton.set(mapButtonX, startY - 2 * (buttonHeight + margin), mapButtonWidth, buttonHeight);
-        lakesMapButton.set(mapButtonX, startY - 3 * (buttonHeight + margin), mapButtonWidth, buttonHeight);
-    }
-
-    @Override
-    public void dispose() {
-        if (shapeRenderer != null) shapeRenderer.dispose();
-        if (batch != null) batch.dispose();
     }
     
-    // Input processor for both UI and map interaction
-    private class CustomInputProcessor extends com.badlogic.gdx.InputAdapter {
-        private MapEditorScreen screen;
-        
-        public CustomInputProcessor(MapEditorScreen screen) {
-            this.screen = screen;
-        }
-        
+    @Override
+    public void pause() {
+        // Manipular pausa da aplicação
+    }
+    
+    @Override
+    public void resume() {
+        // Manipular retomada da aplicação
+        lastFrameTime = TimeUtils.millis();
+    }
+    
+    @Override
+    public void dispose() {
+        if (batch != null) batch.dispose();
+        if (shapeRenderer != null) shapeRenderer.dispose();
+        if (font != null) font.dispose();
+    }
+    
+    /**
+     * Processador de entrada para interações do jogo
+     */
+    private class GameInputProcessor extends InputAdapter {
         @Override
         public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-            if (button == Input.Buttons.LEFT) {
-                screen.handleMapClick(screenX, screenY);
-                screen.startDragging();
+            // Verificar cliques na UI primeiro
+            boolean uiClicked = uiManager.checkUIClick(screenX, screenY);
+            
+            if (uiClicked) {
+                // Se clicou no botão de reset, resetar o mapa
+                if (uiManager.isResetButtonClicked(screenX, screenY)) {
+                    resetMap();
+                }
                 return true;
             }
-            return false;
+            
+            // Reset last placed tile position
+            lastPlacedTileX = -1;
+            lastPlacedTileY = -1;
+            
+            // Manipular interação com o mapa
+            if (button == Input.Buttons.LEFT) {
+                handleMapClick(screenX, screenY);
+            }
+            return true;
         }
         
         @Override
         public boolean touchDragged(int screenX, int screenY, int pointer) {
-            screen.handleMapDrag(screenX, screenY);
-            return true;
-        }
-        
-        @Override
-        public boolean touchUp(int screenX, int screenY, int pointer, int button) {
-            if (button == Input.Buttons.LEFT) {
-                screen.stopDragging();
-                return true;
+            // Manipular colocação contínua de tiles no modo editor
+            if (uiManager.isEditorMode()) {
+                handleMapClick(screenX, screenY);
             }
-            return false;
+            return true;
         }
     }
 }
