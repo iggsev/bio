@@ -1,189 +1,197 @@
 package com.biobox;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType;
-import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector3;
-import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Skin;
+import com.badlogic.gdx.scenes.scene2d.ui.Table;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
+import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.utils.viewport.ScreenViewport;
 
 /**
- * Editor for placing terrain on the map
+ * Editor para posicionar terrenos no mapa
  */
 public class WorldEditor {
-    // Components
+    // Componentes
     private SquareGrid grid;
     private ShapeRenderer shapeRenderer;
     private SpriteBatch batch;
     private BitmapFont font;
     private SquareTileRenderer tileRenderer;
-    private GlyphLayout glyphLayout; // For measuring text
-    
-    // State
+    private BiomeGenerator worldGenerator;
+    private BiomeGenerator.WorldType selectedWorldType = BiomeGenerator.WorldType.CLASSIC;
+
+    // Estado
     private BiomeType selectedBiome = BiomeType.GRASS;
-    private boolean active = false;
+    private boolean active = true;
     private int hoveredTileX = -1;
     private int hoveredTileY = -1;
-    
-    // UI elements
-    private Array<Rectangle> biomeButtons = new Array<>();
-    private Array<String> biomeLabels = new Array<>();
-    
+
+    // Elementos de UI
+    private Stage stage;
+    private Skin skin;
+    private Table panel;
+
+    // Abas
+    private enum EditorTab { TERRAIN, NEW_WORLD }
+    private EditorTab currentTab = EditorTab.TERRAIN;
+
     public WorldEditor(SquareGrid grid, ShapeRenderer shapeRenderer, SpriteBatch batch, 
-                      BitmapFont font, SquareTileRenderer tileRenderer) {
+                      BitmapFont font, SquareTileRenderer tileRenderer, BiomeGenerator worldGenerator) {
         this.grid = grid;
         this.shapeRenderer = shapeRenderer;
         this.batch = batch;
         this.font = font;
         this.tileRenderer = tileRenderer;
-        this.glyphLayout = new GlyphLayout(); // Initialize GlyphLayout
-        
+        this.worldGenerator = worldGenerator;
+
+        // Inicializar UI Scene2D
+        this.stage = new Stage(new ScreenViewport());
+        this.skin = new Skin(Gdx.files.internal("uiskin.json")); // Certifique-se de que este arquivo existe
         setupUI();
     }
-    
+
     /**
-     * Setup the UI elements
+     * Configura os elementos de UI usando Scene2D
      */
-    private void setupUI() {
-        BiomeType[] biomes = BiomeType.values();
-        int buttonWidth = 120;
-        int buttonHeight = 25;
-        int margin = 10;
-        int spacing = 5;
-        int buttonsPerColumn = 9;
-        
-        // Create buttons for each biome type
-        for (int i = 0; i < biomes.length; i++) {
-            int column = i / buttonsPerColumn;
-            int row = i % buttonsPerColumn;
-            
-            Rectangle button = new Rectangle(
-                margin + column * (buttonWidth + spacing), 
-                Gdx.graphics.getHeight() - margin - (row + 1) * (buttonHeight + spacing),
-                buttonWidth,
-                buttonHeight
-            );
-            
-            biomeButtons.add(button);
-            biomeLabels.add(biomes[i].name());
+    public void setupUI() {
+        panel = new Table();
+        panel.setWidth(Gdx.graphics.getWidth());
+        panel.setHeight(150);
+        panel.setPosition(0, 0);
+
+        updateUIContent();
+
+        stage.addActor(panel);
+    }
+
+    /**
+     * Atualiza o conteúdo da UI com base na aba atual
+     */
+    private void updateUIContent() {
+        panel.clearChildren();
+
+        // Adicionar abas
+        Table tabTable = new Table();
+        TextButton terrainTab = new TextButton("Edit Terrain", skin);
+        terrainTab.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                currentTab = EditorTab.TERRAIN;
+                updateUIContent();
+            }
+        });
+        tabTable.add(terrainTab).width(120).height(30).pad(5);
+
+        TextButton newWorldTab = new TextButton("New World", skin);
+        newWorldTab.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                currentTab = EditorTab.NEW_WORLD;
+                updateUIContent();
+            }
+        });
+        tabTable.add(newWorldTab).width(120).height(30).pad(5);
+
+        panel.add(tabTable).colspan(2).padBottom(10);
+        panel.row();
+
+        if (currentTab == EditorTab.TERRAIN) {
+            Table buttonTable = new Table();
+            BiomeType[] biomes = BiomeType.values();
+            for (int i = 0; i < biomes.length; i++) {
+                BiomeType biome = biomes[i];
+                TextButton button = new TextButton(biome.name(), skin);
+                button.addListener(new ClickListener() {
+                    @Override
+                    public void clicked(InputEvent event, float x, float y) {
+                        selectedBiome = biome;
+                    }
+                });
+                buttonTable.add(button).width(100).height(40).pad(5);
+                if ((i + 1) % 4 == 0) buttonTable.row();
+            }
+            panel.add(buttonTable);
+        } else {
+            Table buttonTable = new Table();
+            BiomeGenerator.WorldType[] worldTypes = BiomeGenerator.WorldType.values();
+            for (BiomeGenerator.WorldType worldType : worldTypes) {
+                TextButton button = new TextButton(worldType.name(), skin);
+                button.addListener(new ClickListener() {
+                    @Override
+                    public void clicked(InputEvent event, float x, float y) {
+                        selectedWorldType = worldType;
+                    }
+                });
+                buttonTable.add(button).width(140).height(40).pad(5);
+            }
+            panel.add(buttonTable);
+
+            TextButton generateButton = new TextButton("Generate Map", skin);
+            generateButton.addListener(new ClickListener() {
+                @Override
+                public void clicked(InputEvent event, float x, float y) {
+                    generateNewMap();
+                }
+            });
+            panel.add(generateButton).width(150).height(40).pad(5);
         }
     }
-    
+
     /**
-     * Render the editor UI
+     * Renderiza a UI do editor
      */
     public void render(OrthographicCamera camera) {
-        if (!active) return;
-        
-        // Render biome buttons
-        renderBiomeButtons();
-        
-        // Render tile hover indicator
-        renderTileHover(camera);
+        stage.act(Gdx.graphics.getDeltaTime());
+        stage.draw();
+
+        if (currentTab == EditorTab.TERRAIN) {
+            renderTileHover(camera);
+        }
     }
-    
+
     /**
-     * Render the biome selection buttons
-     */
-    private void renderBiomeButtons() {
-        // Draw buttons
-        shapeRenderer.begin(ShapeType.Filled);
-        
-        BiomeType[] biomes = BiomeType.values();
-        for (int i = 0; i < biomeButtons.size; i++) {
-            // Set color based on biome
-            Color color = biomes[i].getBaseColor();
-            
-            // Highlight selected biome
-            if (biomes[i] == selectedBiome) {
-                color = new Color(
-                    Math.min(1f, color.r + 0.2f),
-                    Math.min(1f, color.g + 0.2f),
-                    Math.min(1f, color.b + 0.2f),
-                    1f
-                );
-            }
-            
-            shapeRenderer.setColor(color);
-            Rectangle button = biomeButtons.get(i);
-            shapeRenderer.rect(button.x, button.y, button.width, button.height);
-        }
-        
-        shapeRenderer.end();
-        
-        // Draw button outlines
-        shapeRenderer.begin(ShapeType.Line);
-        shapeRenderer.setColor(Color.WHITE);
-        
-        for (Rectangle button : biomeButtons) {
-            shapeRenderer.rect(button.x, button.y, button.width, button.height);
-        }
-        
-        shapeRenderer.end();
-        
-        // Draw button labels
-        batch.begin();
-        for (int i = 0; i < biomeButtons.size; i++) {
-            Rectangle button = biomeButtons.get(i);
-            String label = biomeLabels.get(i);
-            
-            // Get text width using GlyphLayout
-            glyphLayout.setText(font, label);
-            float textWidth = glyphLayout.width;
-            
-            // Position the text in the center of the button
-            float textX = button.x + (button.width - textWidth) / 2;
-            float textY = button.y + button.height - 5;
-            
-            font.draw(batch, label, textX, textY);
-        }
-        
-        // Draw editor instructions
-        String instructions = "Click to place terrain | TAB to toggle editor";
-        font.draw(batch, instructions, 10, 30);
-        
-        batch.end();
-    }
-    
-    /**
-     * Render a hover indicator over the tile under the mouse
+     * Renderiza um indicador de hover sobre o tile sob o mouse
      */
     private void renderTileHover(OrthographicCamera camera) {
         updateHoveredTile(camera);
-        
+
         if (hoveredTileX >= 0 && hoveredTileY >= 0) {
             shapeRenderer.setProjectionMatrix(camera.combined);
             shapeRenderer.begin(ShapeType.Line);
             shapeRenderer.setColor(Color.WHITE);
-            
+
             float x = hoveredTileX * SquareTileRenderer.TILE_SIZE;
             float y = hoveredTileY * SquareTileRenderer.TILE_SIZE;
             float size = SquareTileRenderer.TILE_SIZE;
-            
+
             shapeRenderer.rect(x, y, size, size);
-            
             shapeRenderer.end();
         }
     }
-    
+
     /**
-     * Update the currently hovered tile based on mouse position
+     * Atualiza o tile atualmente sob o mouse
      */
     private void updateHoveredTile(OrthographicCamera camera) {
-        // Convert mouse coordinates to world coordinates
-        Vector3 mousePos = new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0);
-        camera.unproject(mousePos);
-        
-        // Calculate tile coordinates
-        int tileX = (int)(mousePos.x / SquareTileRenderer.TILE_SIZE);
-        int tileY = (int)(mousePos.y / SquareTileRenderer.TILE_SIZE);
-        
-        // Update only if in bounds
+        int screenX = Gdx.input.getX();
+        int screenY = Gdx.input.getY();
+
+        Vector3 worldPos = new Vector3(screenX, screenY, 0);
+        camera.unproject(worldPos);
+
+        int tileX = (int)(worldPos.x / SquareTileRenderer.TILE_SIZE);
+        int tileY = (int)(worldPos.y / SquareTileRenderer.TILE_SIZE);
+
         if (grid.isInBounds(tileX, tileY)) {
             hoveredTileX = tileX;
             hoveredTileY = tileY;
@@ -192,57 +200,61 @@ public class WorldEditor {
             hoveredTileY = -1;
         }
     }
-    
+
     /**
-     * Handle mouse input for the editor
+     * Processa entrada do mouse para o editor
      */
     public boolean handleInput(OrthographicCamera camera) {
-        if (!active) return false;
-        
-        // Handle clicking on UI elements
+        stage.act(Gdx.graphics.getDeltaTime());
+
+        // Verifica se o clique foi no stage
         if (Gdx.input.justTouched()) {
-            int screenX = Gdx.input.getX();
-            int screenY = Gdx.input.getY();
-            
-            // Check biome buttons first
-            BiomeType[] biomes = BiomeType.values();
-            for (int i = 0; i < biomeButtons.size; i++) {
-                Rectangle button = biomeButtons.get(i);
-                if (button.contains(screenX, Gdx.graphics.getHeight() - screenY)) {
-                    selectedBiome = biomes[i];
-                    return true;
-                }
+            Vector3 touchPos = new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0);
+            if (stage.hit(touchPos.x, touchPos.y, true) != null) {
+                return true; // Input processado pelo stage
             }
-            
-            // If not on buttons, place terrain at the hovered tile
+        }
+
+        // Processa edição de terreno
+        if (active && currentTab == EditorTab.TERRAIN && Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
+            updateHoveredTile(camera);
             if (hoveredTileX >= 0 && hoveredTileY >= 0) {
-                grid.setTile(hoveredTileX, hoveredTileY, selectedBiome);
+                grid.setTile(hoveredTileX, hoveredTileY, selectedBiome); // Corrigido para setTile
                 tileRenderer.markDirty();
                 return true;
             }
         }
-        
         return false;
     }
-    
+
     /**
-     * Toggle the editor active state
+     * Gera um novo mapa usando o tipo de mundo selecionado
      */
+    private void generateNewMap() {
+        if (worldGenerator != null) {
+            worldGenerator.generateWorld(grid, selectedWorldType);
+            tileRenderer.markDirty();
+        }
+    }
+
+    public BiomeGenerator.WorldType getSelectedWorldType() {
+        return selectedWorldType;
+    }
+
     public void toggle() {
         active = !active;
+        System.out.println("Editor active: " + active);
     }
-    
-    /**
-     * Check if the editor is active
-     */
+
     public boolean isActive() {
         return active;
     }
-    
-    /**
-     * Get the currently selected biome
-     */
+
     public BiomeType getSelectedBiome() {
         return selectedBiome;
+    }
+
+    public Stage getStage() {
+        return stage;
     }
 }
