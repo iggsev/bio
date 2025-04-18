@@ -1,33 +1,35 @@
 package com.biobox;
 
-import com.badlogic.gdx.math.MathUtils;
-
-public class Map {
-    private TileType[][] tiles;
+/**
+ * A simple grid structure using square tiles (replacing HexGrid)
+ */
+public class SquareGrid {
+    private BiomeType[][] tiles;
     private final int width;
     private final int height;
 
-    public Map(int width, int height) {
+    public SquareGrid(int width, int height) {
         this.width = width;
         this.height = height;
-        tiles = new TileType[width][height];
+        tiles = new BiomeType[width][height];
         
-        // Initialize map with grass
+        // Initialize with default biome
         for (int x = 0; x < width; x++) {
             for (int y = 0; y < height; y++) {
-                tiles[x][y] = TileType.GRASS;
+                tiles[x][y] = BiomeType.GRASS;
             }
         }
     }
 
-    public TileType getTile(int x, int y) {
+    public BiomeType getTile(int x, int y) {
         if (x >= 0 && x < width && y >= 0 && y < height) {
             return tiles[x][y];
         }
-        return TileType.WALL; // Default to wall for out-of-bounds
+        // Return null for out-of-bounds
+        return null;
     }
 
-    public void setTile(int x, int y, TileType type) {
+    public void setTile(int x, int y, BiomeType type) {
         if (x >= 0 && x < width && y >= 0 && y < height) {
             tiles[x][y] = type;
         }
@@ -39,5 +41,9 @@ public class Map {
 
     public int getHeight() {
         return height;
+    }
+    
+    public boolean isInBounds(int x, int y) {
+        return x >= 0 && x < width && y >= 0 && y < height;
     }
 }
