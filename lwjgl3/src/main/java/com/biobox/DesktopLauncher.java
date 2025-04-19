@@ -3,6 +3,9 @@ package com.biobox;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
 
+/**
+ * Launches the RPG World Generator desktop application
+ */
 public class DesktopLauncher {
     public static void main(String[] args) {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
@@ -12,7 +15,7 @@ public class DesktopLauncher {
         config.setBackBufferConfig(8, 8, 8, 8, 16, 0, 0);
         config.useVsync(true);
         
-        // Create and run the application
-        new Lwjgl3Application(new RPGWorldGenerator(), config);
+        // Create and run the application with our new main class
+        new Lwjgl3Application(new WorldEditorMain(), config);
     }
 }
