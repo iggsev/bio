@@ -17,7 +17,7 @@ public class SquareTileRenderer {
     // Constants
     public static final int PIXEL_SIZE = 3;
     public static final int TILE_SIZE = 16; // Size of each tile in pixels
-    public static final float BORDER_WIDTH = 1.5f; // Width of tile borders
+    public static final float BORDER_WIDTH = 1f; // Width of tile borders
     
     // Components
     private final SquareGrid grid;

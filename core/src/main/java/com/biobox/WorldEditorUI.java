@@ -6,6 +6,7 @@ import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
@@ -94,8 +95,9 @@ public class WorldEditorUI {
     
     private static final int TAB_HEIGHT = 30;
     private static final int BUTTON_HEIGHT = 40;
-    private static final int BIOME_BUTTON_SIZE = 50;
-    private static final int BUTTON_SPACING = 10;
+    // Reduzido o tamanho dos botões e o espaçamento para melhor ajuste
+    private static final int BIOME_BUTTON_SIZE = 40;
+    private static final int BUTTON_SPACING = 8;
     
     /**
      * Constructor initializes the UI components and input processors
@@ -111,11 +113,11 @@ public class WorldEditorUI {
         this.worldGenerator = worldGenerator;
         this.glyphLayout = new GlyphLayout();
         
-        // Setup the map camera and viewport
+        // Setup the map camera and viewport - ALTERADO para usar o tamanho do grid
         this.mapCamera = new OrthographicCamera();
         this.mapViewport = new FitViewport(
-            SCREEN_WIDTH, 
-            SCREEN_HEIGHT - BOTTOM_PANEL_HEIGHT, 
+            grid.getWidth() * SquareTileRenderer.TILE_SIZE,
+            grid.getHeight() * SquareTileRenderer.TILE_SIZE,
             mapCamera
         );
         
@@ -124,12 +126,7 @@ public class WorldEditorUI {
         this.uiViewport = new FitViewport(SCREEN_WIDTH, SCREEN_HEIGHT, uiCamera);
         
         // Position the cameras
-        mapCamera.position.set(SCREEN_WIDTH / 2, (SCREEN_HEIGHT - BOTTOM_PANEL_HEIGHT) / 2, 0);
         uiCamera.position.set(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 0);
-        
-        // Update cameras
-        mapCamera.update();
-        uiCamera.update();
         
         // Define map and UI areas
         mapArea = new Rectangle(0, BOTTOM_PANEL_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - BOTTOM_PANEL_HEIGHT);
@@ -137,6 +134,10 @@ public class WorldEditorUI {
         
         // Center the map camera on the grid (in world space)
         centerMapCamera();
+        
+        // Update cameras 
+        mapCamera.update();
+        uiCamera.update();
         
         // Initialize input processing
         mapInputProcessor = new MapInputProcessor();
@@ -149,19 +150,27 @@ public class WorldEditorUI {
     }
     
     /**
-     * Center the map camera on the grid
+     * Center the map camera on the grid - REESCRITO para melhor zoom
      */
     private void centerMapCamera() {
         int gridWidthInPixels = grid.getWidth() * SquareTileRenderer.TILE_SIZE;
         int gridHeightInPixels = grid.getHeight() * SquareTileRenderer.TILE_SIZE;
         
+        // Calcular o zoom ideal para preencher a área disponível
+        float widthRatio = SCREEN_WIDTH / (float)gridWidthInPixels;
+        float heightRatio = (SCREEN_HEIGHT - BOTTOM_PANEL_HEIGHT) / (float)gridHeightInPixels;
+        
+        // Usar o menor valor para garantir que todo o mapa seja visível
+        float zoom = Math.min(widthRatio, heightRatio) * 0.95f; // 5% de margem
+        
         mapCamera.position.set(gridWidthInPixels / 2f, gridHeightInPixels / 2f, 0);
-        // Adjust zoom to fill more of the screen (smaller value = more zoomed in)
-        mapCamera.zoom = 0.5f; // Changed from 1.8f to zoom in more and fill the screen
+        // Ajustar o zoom (usando o inverso porque valores menores = mais zoom)
+        mapCamera.zoom = 1.0f / zoom;
         mapCamera.update();
         
         // Debug info - print grid size in pixels
         System.out.println("Grid size in pixels: " + gridWidthInPixels + "x" + gridHeightInPixels);
+        System.out.println("Map camera zoom: " + mapCamera.zoom);
     }
     
     /**
@@ -229,14 +238,15 @@ public class WorldEditorUI {
     }
     
     /**
-     * Set up the biome selection buttons
+     * Set up the biome selection buttons - REESCRITO para mais botões por linha
      */
     private void setupBiomeButtons() {
         biomeButtons.clear();
         biomeLabels.clear();
         
         BiomeType[] biomes = BiomeType.values();
-        int buttonsPerRow = 7;
+        // Aumentar o número de botões por linha
+        int buttonsPerRow = 8;
         int startX = 10;
         int startY = BOTTOM_PANEL_HEIGHT - TAB_HEIGHT - BUTTON_SPACING - BIOME_BUTTON_SIZE - 10;
         
@@ -244,9 +254,18 @@ public class WorldEditorUI {
             int row = i / buttonsPerRow;
             int col = i % buttonsPerRow;
             
+            // Calcular a posição Y com espaçamento ajustado para garantir que caiba
+            float y = startY - row * (BIOME_BUTTON_SIZE + BUTTON_SPACING);
+            
+            // Verificar se o botão ficaria abaixo da área visível
+            if (y < 5) {
+                // Ajustar para a última linha visível
+                y = 5;
+            }
+            
             Rectangle button = new Rectangle(
                 startX + col * (BIOME_BUTTON_SIZE + BUTTON_SPACING),
-                startY - row * (BIOME_BUTTON_SIZE + BUTTON_SPACING + 15),
+                y,
                 BIOME_BUTTON_SIZE,
                 BIOME_BUTTON_SIZE
             );
@@ -338,7 +357,6 @@ public class WorldEditorUI {
     
     /**
      * Update the currently hovered tile based on mouse position
-     * Fixed to address the Y-coordinate inversion issue
      */
     private void updateHoveredTile() {
         // Only update hover if mouse is in map area
@@ -353,8 +371,8 @@ public class WorldEditorUI {
         int screenY = Gdx.input.getY();
         
         // Convert screen coordinates to world coordinates
-        Vector3 worldCoords = mapCamera.unproject(new Vector3(screenX, screenY, 0));
-        
+        Vector3 worldCoords = new Vector3(screenX, screenY, 0);
+        mapViewport.unproject(worldCoords);        
         // Calculate tile coordinates
         int tileX = (int)(worldCoords.x / SquareTileRenderer.TILE_SIZE);
         
@@ -369,9 +387,6 @@ public class WorldEditorUI {
             hoveredTileX = -1;
             hoveredTileY = -1;
         }
-        
-        // Debug info
-        System.out.println("Hovered tile: " + hoveredTileX + ", " + hoveredTileY);
     }
     
     /**
@@ -409,18 +424,17 @@ public class WorldEditorUI {
     }
     
     /**
-     * Render the map
+     * Render the map - REESCRITO para configurar o viewport corretamente
      */
     private void renderMap() {
-        // Set the correct viewport for the map area
-        Gdx.gl.glViewport(
-            0,
-            BOTTOM_PANEL_HEIGHT,
-            (int)mapArea.width,
-            (int)mapArea.height
-        );
-        
+        // Configurar a posição e tamanho do viewport
+        mapViewport.setScreenPosition(0, BOTTOM_PANEL_HEIGHT);
+        mapViewport.setScreenSize((int)mapArea.width, (int)mapArea.height);
         mapViewport.apply();
+        
+        // Limpar a área com uma cor de fundo para visualizar melhor
+        Gdx.gl.glClearColor(0.1f, 0.1f, 0.2f, 1);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
         
         // Render the world with the map camera
         tileRenderer.render(mapCamera);
@@ -607,7 +621,7 @@ public class WorldEditorUI {
             controlY -= 20;
         }
         
-        // Draw biome labels for terrain tab
+        // Draw biome labels for terrain tab - MODIFICADO para evitar corte
         if (selectedTabIndex == 0) {
             for (int i = 0; i < biomeButtons.size && i < biomeLabels.size; i++) {
                 Rectangle button = biomeButtons.get(i);
@@ -617,6 +631,9 @@ public class WorldEditorUI {
                 if (label.length() > 10) {
                     label = label.substring(0, Math.min(label.length(), 10));
                 }
+                
+                // Pular rótulos para botões que estão muito baixos
+                if (button.y < 15) continue;
                 
                 glyphLayout.setText(font, label);
                 float labelX = button.x + (button.width - glyphLayout.width) / 2;
@@ -701,13 +718,6 @@ public class WorldEditorUI {
      */
     private void renderTileHover() {
         // Set the correct viewport for the map area
-        Gdx.gl.glViewport(
-            0,
-            BOTTOM_PANEL_HEIGHT,
-            (int)mapArea.width,
-            (int)mapArea.height
-        );
-        
         mapViewport.apply();
         
         shapeRenderer.setProjectionMatrix(mapCamera.combined);
@@ -737,13 +747,13 @@ public class WorldEditorUI {
      * Resize the UI components when the window is resized
      */
     public void resize(int width, int height) {
-        // Update viewports
-        mapViewport.update(
-            width,
-            height - BOTTOM_PANEL_HEIGHT, 
-            false
-        );
+        // Update UI viewport
         uiViewport.update(width, height, false);
+        
+        // Update map viewport
+        mapViewport.setScreenSize(width, height - BOTTOM_PANEL_HEIGHT);
+        mapViewport.setScreenPosition(0, BOTTOM_PANEL_HEIGHT);
+        mapViewport.update(width, height - BOTTOM_PANEL_HEIGHT, false);
         
         // Update UI areas
         mapArea.width = width;
@@ -753,6 +763,9 @@ public class WorldEditorUI {
         // Update UI elements
         setupMainMenu();
         setupEditorUI();
+        
+        // Recalcular o zoom do mapa após redimensionar
+        centerMapCamera();
     }
     
     /**
