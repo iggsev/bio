@@ -22,9 +22,8 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
-            android:screenOrientation="landscape"
-            android:resizeableActivity="false"
-            tools:ignore="LockedOrientationActivity">
+            android:resizeableActivity="true">
+            <!-- CORREÇÃO: Remover android:screenOrientation="landscape" para permitir orientação livre -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

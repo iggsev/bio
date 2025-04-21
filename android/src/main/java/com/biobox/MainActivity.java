@@ -5,6 +5,7 @@ import android.util.Log;
 import android.widget.Toast;
 import com.badlogic.gdx.backends.android.AndroidApplication;
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration;
+import com.biobox.ui.ResponsiveWorldEditorUI;
 
 public class MainActivity extends AndroidApplication {
     private static final String TAG = "BioBoxApp";
@@ -15,11 +16,15 @@ public class MainActivity extends AndroidApplication {
         
         try {
             AndroidApplicationConfiguration config = new AndroidApplicationConfiguration();
+            
+            // Utilizar modo imersivo para melhor experiência
             config.useImmersiveMode = true;
+            
+            // Desabilitar sensores desnecessários para economizar bateria
             config.useAccelerometer = false;
             config.useCompass = false;
             
-            // Configure OpenGL
+            // Configurar OpenGL
             config.r = 8;
             config.g = 8;
             config.b = 8;
@@ -27,11 +32,11 @@ public class MainActivity extends AndroidApplication {
             config.depth = 16;
             
             // Iniciar com mensagem para debug
-            Log.i(TAG, "Iniciando BioBox...");
+            Log.i(TAG, "Iniciando BioBox com UI Responsiva...");
             Toast.makeText(this, "Iniciando BioBox...", Toast.LENGTH_SHORT).show();
             
-            // Use o WorldEditorMain principal em vez da versão de teste
-            initialize(new WorldEditorMain(), config);
+            // Inicializar o jogo com a versão responsiva
+            initialize(new ResponsiveWorldEditorMain(), config);
             
             Log.i(TAG, "BioBox iniciado com sucesso!");
         } catch (Exception e) {
