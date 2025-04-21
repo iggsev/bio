@@ -27,6 +27,14 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+        
+        // Especificar apenas uma arquitetura para testes
+        // (escolha a que corresponde ao seu dispositivo)
+        ndk {
+            abiFilters 'arm64-v8a'  // Opção mais comum em dispositivos modernos
+            // Remover comentário abaixo se seu dispositivo for mais antigo
+            // abiFilters 'armeabi-v7a'
+        }
     }
 
     buildTypes {
@@ -40,20 +48,43 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+    
+    // CONFIGURAÇÃO CRÍTICA: diretórios de onde buscar arquivos
+    sourceSets {
+        main {
+            assets.srcDirs = ['../assets']
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+    
+    // Evitar duplicação de arquivos
+    packagingOptions {
+        pickFirst '**/*.so'
+    }
 }
 
 dependencies {
     implementation project(':core')
     
-    // LibGDX Android dependencies
+    // LibGDX Android dependencies com especificação CORRETA de arquiteturas
     implementation "com.badlogicgames.gdx:gdx-backend-android:1.12.1"
-    implementation "com.badlogicgames.gdx:gdx-platform:1.12.1"
+    
+    // Arquitetura principal - IMPORTANTE
+    implementation "com.badlogicgames.gdx:gdx-platform:1.12.1:natives-arm64-v8a"
+    // Arquitetura alternativa - manter comentada a menos que seja necessária
+    // implementation "com.badlogicgames.gdx:gdx-platform:1.12.1:natives-armeabi-v7a"
+    
+    // FreeType
     implementation "com.badlogicgames.gdx:gdx-freetype:1.12.1"
-    implementation "com.badlogicgames.gdx:gdx-freetype-platform:1.12.1"
+    implementation "com.badlogicgames.gdx:gdx-freetype-platform:1.12.1:natives-arm64-v8a"
+    // implementation "com.badlogicgames.gdx:gdx-freetype-platform:1.12.1:natives-armeabi-v7a"
+    
+    // Box2D
     implementation "com.badlogicgames.gdx:gdx-box2d:1.12.1"
-    implementation "com.badlogicgames.gdx:gdx-box2d-platform:1.12.1"
+    implementation "com.badlogicgames.gdx:gdx-box2d-platform:1.12.1:natives-arm64-v8a"
+    // implementation "com.badlogicgames.gdx:gdx-box2d-platform:1.12.1:natives-armeabi-v7a"
 
-    // Android and Kotlin dependencies
+    // Android e Kotlin dependencies
     implementation "androidx.core:core-ktx:1.10.1"
     implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"

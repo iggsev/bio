@@ -1,0 +1,2 @@
+This is a placeholder for a pixel texture.
+In a real application, you would have PNG or JPEG files here.
